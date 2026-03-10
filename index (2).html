@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI4I — Machine Failure Classifier</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;500;600;700;900&family=Barlow+Condensed:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #090c10;
+    --surface:  #0d1117;
+    --card:     #111820;
+    --border:   #1e2a38;
+    --red:      #ff3b3b;
+    --red-dim:  #7a1a1a;
+    --amber:    #f5a623;
+    --green:    #00e5a0;
+    --blue:     #2d8cff;
+    --muted:    #4a6380;
+    --text:     #c8d8e8;
+    --dim:      #6b7f94;
+    --mono:     'Share Tech Mono', monospace;
+    --sans:     'Barlow', sans-serif;
+    --cond:     'Barlow Condensed', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── GRID BACKGROUND ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(45,140,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(45,140,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 1320px; margin: 0 auto; padding: 24px 20px 60px; }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding-bottom: 28px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .header-left {}
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 2px;
+    color: var(--red); background: rgba(255,59,59,0.1);
+    border: 1px solid rgba(255,59,59,0.3);
+    padding: 3px 10px; border-radius: 2px;
+    text-transform: uppercase; margin-bottom: 10px;
+  }
+  .badge::before { content:''; width:6px; height:6px; background:var(--red); border-radius:50%; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  h1 {
+    font-family: var(--cond);
+    font-size: clamp(26px, 4vw, 44px);
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    line-height: 1;
+    color: #fff;
+  }
+  h1 span { color: var(--red); }
+  .subtitle { font-size: 13px; color: var(--dim); margin-top: 6px; font-weight: 400; letter-spacing: 0.3px; }
+
+  .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .timestamp { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .model-tag {
+    font-family: var(--mono); font-size: 10px;
+    color: var(--green); background: rgba(0,229,160,0.08);
+    border: 1px solid rgba(0,229,160,0.2);
+    padding: 3px 10px; border-radius: 2px;
+  }
+
+  /* ── KPI ROW ── */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .kpi {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 18px 20px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+    cursor: default;
+  }
+  .kpi::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  }
+  .kpi.red::before  { background: var(--red); }
+  .kpi.green::before{ background: var(--green); }
+  .kpi.blue::before { background: var(--blue); }
+  .kpi.amber::before{ background: var(--amber); }
+
+  .kpi:hover { border-color: var(--muted); }
+  .kpi-label { font-family: var(--mono); font-size: 9px; letter-spacing: 2px; color: var(--dim); text-transform: uppercase; margin-bottom: 8px; }
+  .kpi-val { font-family: var(--cond); font-size: 36px; font-weight: 900; line-height: 1; color: #fff; }
+  .kpi-sub { font-size: 11px; color: var(--dim); margin-top: 4px; }
+  .kpi-val.red   { color: var(--red); }
+  .kpi-val.green { color: var(--green); }
+  .kpi-val.blue  { color: var(--blue); }
+  .kpi-val.amber { color: var(--amber); }
+
+  /* ── GRID LAYOUT ── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .grid-12 { display: grid; grid-template-columns: 1fr 2fr; gap: 16px; margin-bottom: 16px; }
+  .grid-21 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media(max-width: 800px) {
+    .grid-2, .grid-3, .grid-12, .grid-21 { grid-template-columns: 1fr; }
+  }
+
+  /* ── CARD ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 20px 22px;
+    position: relative;
+  }
+  .card-title {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 2.5px;
+    color: var(--dim); text-transform: uppercase;
+    margin-bottom: 18px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-title::after { content:''; flex:1; height:1px; background:var(--border); }
+
+  /* ── CANVAS charts ── */
+  canvas { display: block; width: 100% !important; }
+
+  /* ── CONFUSION MATRIX ── */
+  .cm-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px; margin-top: 4px;
+  }
+  .cm-cell {
+    padding: 20px 12px;
+    text-align: center;
+    border: 1px solid var(--border);
+    position: relative;
+  }
+  .cm-val { font-family: var(--cond); font-size: 42px; font-weight: 900; line-height: 1; }
+  .cm-desc { font-size: 10px; color: var(--dim); margin-top: 4px; letter-spacing: 0.5px; }
+  .cm-label { font-family: var(--mono); font-size: 9px; margin-top: 6px; }
+
+  .cm-tn { background: rgba(45,140,255,0.05); }
+  .cm-tn .cm-val { color: var(--blue); }
+  .cm-fp { background: rgba(245,166,35,0.05); }
+  .cm-fp .cm-val { color: var(--amber); }
+  .cm-fn { background: rgba(255,59,59,0.12); }
+  .cm-fn .cm-val { color: var(--red); }
+  .cm-tp { background: rgba(0,229,160,0.07); }
+  .cm-tp .cm-val { color: var(--green); }
+
+  .cm-axis { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: 1px; }
+  .cm-axis-row { display: flex; justify-content: space-around; margin-bottom: 4px; padding-left: 60px; }
+  .cm-axis-col { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .cm-axis-col-label { writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 1.5px; font-size: 9px; color: var(--dim); font-family: var(--mono); }
+
+  /* ── FEATURE BAR ── */
+  .feat-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .feat-name { font-family: var(--mono); font-size: 11px; color: var(--text); width: 110px; flex-shrink: 0; }
+  .feat-track { flex: 1; height: 8px; background: var(--border); border-radius: 0; overflow: hidden; }
+  .feat-fill { height: 100%; border-radius: 0; transition: width 1s cubic-bezier(.22,.61,.36,1); }
+  .feat-pct { font-family: var(--mono); font-size: 11px; color: var(--dim); width: 44px; text-align: right; }
+
+  /* ── SMOTE VISUAL ── */
+  .smote-row { display: flex; gap: 12px; align-items: stretch; }
+  .smote-box { flex: 1; border: 1px solid var(--border); padding: 14px 16px; text-align: center; }
+  .smote-n { font-family: var(--cond); font-size: 32px; font-weight: 900; }
+  .smote-tag { font-family: var(--mono); font-size: 9px; letter-spacing: 1.5px; color: var(--dim); margin-top: 4px; }
+  .smote-arrow { display: flex; align-items: center; font-size: 20px; color: var(--amber); padding: 0 4px; }
+
+  /* ── TYPE TABLE ── */
+  .type-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .type-row:last-child { border-bottom: none; }
+  .type-letter { font-family: var(--cond); font-size: 22px; font-weight: 900; width: 28px; }
+  .type-label { font-size: 12px; color: var(--dim); flex: 1; }
+  .type-track { flex: 2; height: 6px; background: var(--border); }
+  .type-fill { height: 100%; }
+  .type-pct { font-family: var(--mono); font-size: 12px; width: 40px; text-align: right; }
+
+  /* ── PIPELINE STEPS ── */
+  .pipeline { display: flex; flex-direction: column; gap: 0; }
+  .step { display: flex; gap: 14px; align-items: flex-start; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .step:last-child { border-bottom: none; }
+  .step-num { font-family: var(--mono); font-size: 10px; color: var(--red); background: rgba(255,59,59,0.1); border: 1px solid var(--red-dim); width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+  .step-title { font-family: var(--cond); font-weight: 700; font-size: 14px; color: #fff; margin-bottom: 3px; letter-spacing: 0.3px; }
+  .step-desc { font-size: 12px; color: var(--dim); line-height: 1.5; }
+
+  /* ── FOOTER ── */
+  footer { border-top: 1px solid var(--border); margin-top: 32px; padding-top: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+  .footer-text { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER -->
+  <header>
+    <div class="header-left">
+      <div class="badge">● LIVE ANALYSIS</div>
+      <h1>MACHINE FAILURE <span>CLASSIFIER</span></h1>
+      <p class="subtitle">AI4I 2020 Predictive Maintenance Dataset &nbsp;·&nbsp; Random Forest + SMOTE &nbsp;·&nbsp; Binary Classification</p>
+    </div>
+    <div class="header-right">
+      <div class="timestamp" id="ts"></div>
+      <div class="model-tag">RF · 150 TREES · DEPTH 10</div>
+    </div>
+  </header>
+
+  <!-- KPI ROW -->
+  <div class="kpi-row">
+    <div class="kpi red">
+      <div class="kpi-label">Dataset Size</div>
+      <div class="kpi-val">10,000</div>
+      <div class="kpi-sub">Total sensor records</div>
+    </div>
+    <div class="kpi red">
+      <div class="kpi-label">Total Failures</div>
+      <div class="kpi-val red">339</div>
+      <div class="kpi-sub">3.39% failure rate</div>
+    </div>
+    <div class="kpi green">
+      <div class="kpi-label">Recall (Failures)</div>
+      <div class="kpi-val green">91.2%</div>
+      <div class="kpi-sub">62 of 68 caught</div>
+    </div>
+    <div class="kpi blue">
+      <div class="kpi-label">ROC-AUC Score</div>
+      <div class="kpi-val blue">0.975</div>
+      <div class="kpi-sub">Near-perfect separation</div>
+    </div>
+    <div class="kpi amber">
+      <div class="kpi-label">Decision Threshold</div>
+      <div class="kpi-val amber">0.30</div>
+      <div class="kpi-sub">Tuned for high recall</div>
+    </div>
+    <div class="kpi amber">
+      <div class="kpi-label">Precision</div>
+      <div class="kpi-val amber">34.1%</div>
+      <div class="kpi-sub">Acceptable false alarms</div>
+    </div>
+  </div>
+
+  <!-- ROW 1: Feature Importance + ROC Curve -->
+  <div class="grid-2">
+
+    <div class="card">
+      <div class="card-title">Feature Importance</div>
+      <div class="pipeline" style="gap:0;margin-bottom:0" id="feat-bars"></div>
+      <p style="font-size:11px;color:var(--dim);margin-top:16px;line-height:1.6">
+        <span style="color:var(--red);font-weight:600">Torque</span> and
+        <span style="color:var(--amber);font-weight:600">Tool Wear</span> together account for
+        <span style="color:#fff">57%</span> of the model's decisions —
+        confirming they are the primary mechanical failure drivers.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">ROC Curve &nbsp;<span style="color:var(--green);font-family:var(--mono);font-size:10px">AUC = 0.975</span></div>
+      <canvas id="rocChart" height="220"></canvas>
+    </div>
+
+  </div>
+
+  <!-- ROW 2: Confusion Matrix + Torque + Wear -->
+  <div class="grid-3">
+
+    <div class="card">
+      <div class="card-title">Confusion Matrix</div>
+      <div style="margin-bottom:6px">
+        <div class="cm-axis-row"><span class="cm-axis">PREDICTED NO FAIL</span><span class="cm-axis">PREDICTED FAIL</span></div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <div style="display:flex;align-items:center">
+          <div class="cm-axis-col">
+            <span class="cm-axis-col-label">ACTUAL NO FAIL</span>
+            <span class="cm-axis-col-label">ACTUAL FAIL</span>
+          </div>
+        </div>
+        <div class="cm-grid" style="flex:1">
+          <div class="cm-cell cm-tn">
+            <div class="cm-val">1812</div>
+            <div class="cm-desc">True Negative</div>
+            <div class="cm-label" style="color:var(--blue)">CORRECT ✓</div>
+          </div>
+          <div class="cm-cell cm-fp">
+            <div class="cm-val">120</div>
+            <div class="cm-desc">False Positive</div>
+            <div class="cm-label" style="color:var(--amber)">FALSE ALARM</div>
+          </div>
+          <div class="cm-cell cm-fn">
+            <div class="cm-val">6</div>
+            <div class="cm-desc">False Negative</div>
+            <div class="cm-label" style="color:var(--red)">MISSED ✗</div>
+          </div>
+          <div class="cm-cell cm-tp">
+            <div class="cm-val">62</div>
+            <div class="cm-desc">True Positive</div>
+            <div class="cm-label" style="color:var(--green)">CAUGHT ✓</div>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:10px;color:var(--dim);margin-top:12px;line-height:1.5">
+        Only <span style="color:var(--red)">6 failures missed</span> out of 68.
+        120 false alarms are an acceptable trade-off in industrial safety.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Failure Rate by Torque [Nm]</div>
+      <canvas id="torqueChart" height="220"></canvas>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Failure Rate by Tool Wear [min]</div>
+      <canvas id="wearChart" height="220"></canvas>
+    </div>
+
+  </div>
+
+  <!-- ROW 3: SMOTE + Type Breakdown + Pipeline -->
+  <div class="grid-3">
+
+    <div class="card">
+      <div class="card-title">SMOTE — Class Rebalancing</div>
+      <div class="smote-row" style="margin-bottom:16px">
+        <div class="smote-box">
+          <div class="smote-n" style="color:var(--red)">271</div>
+          <div class="smote-tag">FAILURES BEFORE</div>
+        </div>
+        <div class="smote-arrow">→</div>
+        <div class="smote-box">
+          <div class="smote-n" style="color:var(--green)">2,576</div>
+          <div class="smote-tag">FAILURES AFTER</div>
+        </div>
+      </div>
+      <canvas id="smoteChart" height="160"></canvas>
+      <p style="font-size:11px;color:var(--dim);margin-top:12px;line-height:1.5">
+        SMOTE generated <span style="color:var(--amber)">2,305 synthetic</span> failure samples by interpolating between real ones — growing minority class from 3.4% → 25% of training data.
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Failure Rate by Machine Type</div>
+      <div style="margin-top:8px">
+        <div class="type-row">
+          <div class="type-letter" style="color:var(--red)">L</div>
+          <div class="type-label">Low quality</div>
+          <div class="type-track"><div class="type-fill" style="width:100%;background:var(--red)"></div></div>
+          <div class="type-pct" style="color:var(--red)">3.92%</div>
+        </div>
+        <div class="type-row">
+          <div class="type-letter" style="color:var(--amber)">M</div>
+          <div class="type-label">Medium quality</div>
+          <div class="type-track"><div class="type-fill" style="width:70%;background:var(--amber)"></div></div>
+          <div class="type-pct" style="color:var(--amber)">2.77%</div>
+        </div>
+        <div class="type-row">
+          <div class="type-letter" style="color:var(--green)">H</div>
+          <div class="type-label">High quality</div>
+          <div class="type-track"><div class="type-fill" style="width:53%;background:var(--green)"></div></div>
+          <div class="type-pct" style="color:var(--green)">2.09%</div>
+        </div>
+      </div>
+      <div style="margin-top:20px;padding:14px;background:rgba(255,59,59,0.05);border:1px solid rgba(255,59,59,0.15)">
+        <p style="font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:1.5px;margin-bottom:6px">INSIGHT</p>
+        <p style="font-size:12px;color:var(--text);line-height:1.5">Low-quality machines fail <span style="color:var(--red)">87% more often</span> than high-quality ones. Upgrading to H-type could significantly reduce maintenance costs.</p>
+      </div>
+      <div style="margin-top:16px">
+        <div style="font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:1.5px;margin-bottom:8px">TRAIN / TEST SPLIT</div>
+        <div style="display:flex;height:10px;border:1px solid var(--border);overflow:hidden">
+          <div style="width:80%;background:var(--blue);opacity:0.7"></div>
+          <div style="width:20%;background:var(--amber);opacity:0.8"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:5px">
+          <span style="font-family:var(--mono);font-size:10px;color:var(--blue)">TRAIN 8,000 (80%)</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--amber)">TEST 2,000 (20%)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">ML Pipeline Steps</div>
+      <div class="pipeline">
+        <div class="step">
+          <div class="step-num">01</div>
+          <div>
+            <div class="step-title">Data Loading & EDA</div>
+            <div class="step-desc">Load AI4I CSV, inspect 14 columns, check for missing values and class distribution.</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <div>
+            <div class="step-title">Feature Selection</div>
+            <div class="step-desc">Select 5 sensor features. Drop ID columns, product type, and sub-failure modes.</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <div>
+            <div class="step-title">Train / Test Split</div>
+            <div class="step-desc">80/20 stratified split preserving 3.4% failure ratio in both sets.</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">04</div>
+          <div>
+            <div class="step-title">StandardScaler</div>
+            <div class="step-desc">Fit on train, transform both. Normalises sensor ranges for SMOTE interpolation.</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">05</div>
+          <div>
+            <div class="step-title">SMOTE Oversampling</div>
+            <div class="step-desc">K=5 nearest neighbours. Grows failures from 271 → 2,576. Target ratio: 25%.</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">06</div>
+          <div>
+            <div class="step-title">Random Forest</div>
+            <div class="step-desc">150 trees, max depth 10, class_weight='balanced', threshold lowered to 0.30.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-text">AI4I 2020 PREDICTIVE MAINTENANCE · UCI ML REPOSITORY · 10,000 RECORDS</div>
+    <div class="footer-text">RANDOM FOREST CLASSIFIER · SKLEARN · PANDAS · NUMPY</div>
+    <div class="footer-text" id="footer-ts"></div>
+  </footer>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+// ── DATA ─────────────────────────────────────────────────────────────────────
+const DATA = {
+  features: ["Air Temp","Process Temp","Rot. Speed","Torque","Tool Wear"],
+  importance: [0.0821, 0.0487, 0.2996, 0.3524, 0.2173],
+  roc: [{"fpr":0.0,"tpr":0.0},{"fpr":0.0,"tpr":0.0147},{"fpr":0.0,"tpr":0.0441},{"fpr":0.0005,"tpr":0.0441},{"fpr":0.0005,"tpr":0.0735},{"fpr":0.001,"tpr":0.0735},{"fpr":0.001,"tpr":0.1029},{"fpr":0.0016,"tpr":0.1029},{"fpr":0.0016,"tpr":0.2059},{"fpr":0.0021,"tpr":0.2059},{"fpr":0.0021,"tpr":0.2794},{"fpr":0.0026,"tpr":0.2794},{"fpr":0.0026,"tpr":0.5147},{"fpr":0.0041,"tpr":0.5147},{"fpr":0.0041,"tpr":0.5294},{"fpr":0.0052,"tpr":0.5294},{"fpr":0.0052,"tpr":0.5441},{"fpr":0.0057,"tpr":0.5441},{"fpr":0.0057,"tpr":0.5735},{"fpr":0.0062,"tpr":0.5735},{"fpr":0.0062,"tpr":0.6029},{"fpr":0.0078,"tpr":0.6029},{"fpr":0.0078,"tpr":0.6176},{"fpr":0.0088,"tpr":0.6176},{"fpr":0.0088,"tpr":0.6324},{"fpr":0.0093,"tpr":0.6324},{"fpr":0.0093,"tpr":0.6765},{"fpr":0.0109,"tpr":0.6765},{"fpr":0.0109,"tpr":0.6912},{"fpr":0.0129,"tpr":0.6912},{"fpr":0.0129,"tpr":0.7206},{"fpr":0.0166,"tpr":0.7206},{"fpr":0.0166,"tpr":0.7353},{"fpr":0.0186,"tpr":0.7353},{"fpr":0.0186,"tpr":0.75},{"fpr":0.0269,"tpr":0.75},{"fpr":0.0269,"tpr":0.7647},{"fpr":0.0336,"tpr":0.7647},{"fpr":0.0336,"tpr":0.7794},{"fpr":0.0352,"tpr":0.7794},{"fpr":0.0352,"tpr":0.7941},{"fpr":0.0357,"tpr":0.7941},{"fpr":0.0357,"tpr":0.8088},{"fpr":0.0383,"tpr":0.8088},{"fpr":0.0383,"tpr":0.8235},{"fpr":0.0424,"tpr":0.8235},{"fpr":0.0424,"tpr":0.8382},{"fpr":0.043,"tpr":0.8382},{"fpr":0.043,"tpr":0.8529},{"fpr":0.0445,"tpr":0.8529},{"fpr":0.0445,"tpr":0.8676},{"fpr":0.0507,"tpr":0.8676},{"fpr":0.0507,"tpr":0.8971},{"fpr":0.059,"tpr":0.8971},{"fpr":0.059,"tpr":0.9118},{"fpr":0.0683,"tpr":0.9118},{"fpr":0.0683,"tpr":0.9265},{"fpr":0.0818,"tpr":0.9265},{"fpr":0.0818,"tpr":0.9412},{"fpr":0.1113,"tpr":0.9412},{"fpr":0.1113,"tpr":0.9559},{"fpr":0.1962,"tpr":0.9559},{"fpr":0.1962,"tpr":0.9706},{"fpr":0.2754,"tpr":0.9706},{"fpr":0.2754,"tpr":0.9853},{"fpr":0.2909,"tpr":0.9853},{"fpr":0.2935,"tpr":1.0},{"fpr":1.0,"tpr":1.0}],
+  torque: [
+    {range:"3.7–12.9",rate:89.29},{range:"12.9–22",rate:2.56},{range:"22–31.1",rate:0.87},
+    {range:"31.1–40.2",rate:0.48},{range:"40.2–49.3",rate:1.97},{range:"49.3–58.4",rate:7.1},
+    {range:"58.4–67.5",rate:27.84},{range:"67.5–76.6",rate:91.67}
+  ],
+  wear: [
+    {range:"0–32",rate:2.49},{range:"32–63",rate:1.71},{range:"63–95",rate:2.7},
+    {range:"95–127",rate:2.26},{range:"127–158",rate:1.85},{range:"158–190",rate:2.63},
+    {range:"190–221",rate:9.58},{range:"221–253",rate:26.79}
+  ]
+};
+
+// ── TIMESTAMP ────────────────────────────────────────────────────────────────
+const now = new Date();
+document.getElementById('ts').textContent = now.toLocaleString('en-US', {weekday:'short',year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+document.getElementById('footer-ts').textContent = 'GENERATED ' + now.toISOString().split('T')[0];
+
+// ── FEATURE IMPORTANCE BARS ───────────────────────────────────────────────────
+const featContainer = document.getElementById('feat-bars');
+const sorted = DATA.features.map((f,i) => ({name:f, val:DATA.importance[i]})).sort((a,b)=>b.val-a.val);
+const maxFeat = sorted[0].val;
+const featColors = ['#ff3b3b','#f5a623','#2d8cff','#00e5a0','#6b7f94'];
+sorted.forEach((f,i) => {
+  const pct = Math.round(f.val * 100);
+  const barW = Math.round((f.val / maxFeat) * 100);
+  featContainer.innerHTML += `
+    <div class="feat-row">
+      <div class="feat-name">${f.name}</div>
+      <div class="feat-track">
+        <div class="feat-fill" style="width:${barW}%;background:${featColors[i]}"></div>
+      </div>
+      <div class="feat-pct" style="color:${featColors[i]}">${pct}%</div>
+    </div>`;
+});
+
+// ── CHART DEFAULTS ────────────────────────────────────────────────────────────
+Chart.defaults.color = '#6b7f94';
+Chart.defaults.font.family = "'Share Tech Mono', monospace";
+Chart.defaults.font.size = 10;
+
+const gridColor = 'rgba(30,42,56,0.8)';
+const tickColor = '#4a6380';
+
+// ── ROC CURVE ─────────────────────────────────────────────────────────────────
+new Chart(document.getElementById('rocChart'), {
+  type: 'line',
+  data: {
+    datasets: [
+      {
+        label: 'ROC Curve (AUC=0.975)',
+        data: DATA.roc.map(d => ({x:d.fpr, y:d.tpr})),
+        borderColor: '#00e5a0',
+        borderWidth: 2,
+        pointRadius: 0,
+        fill: true,
+        backgroundColor: 'rgba(0,229,160,0.06)',
+        tension: 0,
+      },
+      {
+        label: 'Random (AUC=0.5)',
+        data: [{x:0,y:0},{x:1,y:1}],
+        borderColor: '#4a6380',
+        borderWidth: 1,
+        borderDash: [4,4],
+        pointRadius: 0,
+        fill: false,
+      },
+      {
+        label: 'Threshold=0.30',
+        data: [{x:0.059, y:0.9118}],
+        borderColor: '#ff3b3b',
+        backgroundColor: '#ff3b3b',
+        pointRadius: 6,
+        pointHoverRadius: 8,
+        showLine: false,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    animation: { duration: 1200, easing: 'easeInOutQuart' },
+    scales: {
+      x: { type:'linear', min:0, max:1, title:{display:true,text:'FALSE POSITIVE RATE',color:tickColor,font:{size:9}}, grid:{color:gridColor}, ticks:{color:tickColor,stepSize:0.2} },
+      y: { min:0, max:1, title:{display:true,text:'TRUE POSITIVE RATE',color:tickColor,font:{size:9}}, grid:{color:gridColor}, ticks:{color:tickColor,stepSize:0.2} }
+    },
+    plugins: { legend:{ labels:{boxWidth:10, font:{size:9}, color:'#6b7f94'} } }
+  }
+});
+
+// ── TORQUE CHART ──────────────────────────────────────────────────────────────
+new Chart(document.getElementById('torqueChart'), {
+  type: 'bar',
+  data: {
+    labels: DATA.torque.map(d => d.range),
+    datasets: [{
+      label: 'Failure Rate %',
+      data: DATA.torque.map(d => d.rate),
+      backgroundColor: DATA.torque.map(d =>
+        d.rate > 50 ? 'rgba(255,59,59,0.85)' :
+        d.rate > 10 ? 'rgba(245,166,35,0.75)' :
+        'rgba(45,140,255,0.5)'
+      ),
+      borderColor: DATA.torque.map(d =>
+        d.rate > 50 ? '#ff3b3b' : d.rate > 10 ? '#f5a623' : '#2d8cff'
+      ),
+      borderWidth: 1,
+    }]
+  },
+  options: {
+    responsive: true,
+    animation: { duration: 1000, easing: 'easeOutQuart' },
+    scales: {
+      x: { grid:{color:gridColor}, ticks:{color:tickColor, maxRotation:35, font:{size:8}} },
+      y: { grid:{color:gridColor}, ticks:{color:tickColor, callback:v=>v+'%'}, title:{display:true,text:'FAILURE RATE',color:tickColor,font:{size:9}} }
+    },
+    plugins: { legend:{display:false} }
+  }
+});
+
+// ── WEAR CHART ────────────────────────────────────────────────────────────────
+new Chart(document.getElementById('wearChart'), {
+  type: 'bar',
+  data: {
+    labels: DATA.wear.map(d => d.range),
+    datasets: [{
+      label: 'Failure Rate %',
+      data: DATA.wear.map(d => d.rate),
+      backgroundColor: DATA.wear.map(d =>
+        d.rate > 15 ? 'rgba(255,59,59,0.85)' :
+        d.rate > 5 ? 'rgba(245,166,35,0.75)' :
+        'rgba(45,140,255,0.5)'
+      ),
+      borderColor: DATA.wear.map(d =>
+        d.rate > 15 ? '#ff3b3b' : d.rate > 5 ? '#f5a623' : '#2d8cff'
+      ),
+      borderWidth: 1,
+    }]
+  },
+  options: {
+    responsive: true,
+    animation: { duration: 1000, easing: 'easeOutQuart', delay: 200 },
+    scales: {
+      x: { grid:{color:gridColor}, ticks:{color:tickColor, maxRotation:35, font:{size:8}} },
+      y: { grid:{color:gridColor}, ticks:{color:tickColor, callback:v=>v+'%'}, title:{display:true,text:'FAILURE RATE',color:tickColor,font:{size:9}} }
+    },
+    plugins: { legend:{display:false} }
+  }
+});
+
+// ── SMOTE CHART ───────────────────────────────────────────────────────────────
+new Chart(document.getElementById('smoteChart'), {
+  type: 'bar',
+  data: {
+    labels: ['No Failure', 'Failure'],
+    datasets: [
+      {
+        label: 'Before SMOTE',
+        data: [7729, 271],
+        backgroundColor: 'rgba(45,140,255,0.3)',
+        borderColor: '#2d8cff',
+        borderWidth: 1,
+      },
+      {
+        label: 'After SMOTE',
+        data: [7729, 2576],
+        backgroundColor: 'rgba(0,229,160,0.3)',
+        borderColor: '#00e5a0',
+        borderWidth: 1,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    animation: { duration: 1000 },
+    scales: {
+      x: { grid:{color:gridColor}, ticks:{color:tickColor} },
+      y: { grid:{color:gridColor}, ticks:{color:tickColor, callback:v=>v>=1000?Math.round(v/1000)+'k':v} }
+    },
+    plugins: { legend:{ labels:{boxWidth:10, font:{size:9}, color:'#6b7f94'} } }
+  }
+});
+</script>
+</body>
+</html>
